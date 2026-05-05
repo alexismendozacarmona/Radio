@@ -1,0 +1,25 @@
+{
+  "name": "Clásicos del Reggaetón",
+  "short_name": "Clásicos",
+  "description": "Radio online premium de los mejores clásicos del reggaetón",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#000A1F",
+  "theme_color": "#000A1F",
+  "categories": ["music", "entertainment"],
+  "icons": [
+    {
+      "src": "https://clasicosdelreggaeton.com/sitepad-data/uploads/2026/02/logoclasx.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "https://clasicosdelreggaeton.com/sitepad-data/uploads/2026/02/logoclasx.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ]
+}
