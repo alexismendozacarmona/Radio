@@ -20,7 +20,7 @@ export interface AdSlide {
 
 const ADMIN_PIN = '1717'; // ← mismo PIN que Noticias
 const AD_STORAGE_KEY = 'cr_ad_banner';
-const AUTOPLAY_MS = 5000;
+const AUTOPLAY_MS = 8000;
 
 const DEFAULT_SLIDES: AdSlide[] = [
   {
@@ -386,6 +386,7 @@ export function AdBanner() {
   if (dismissed || activeSlides.length === 0) return null;
 
   const slide = activeSlides[current % activeSlides.length];
+  const hasImage = !!slide.image?.trim();
 
   return (
     <>
@@ -398,8 +399,10 @@ export function AdBanner() {
       >
         {/* Card */}
         <div
-          className="relative rounded-2xl overflow-hidden select-none"
+          className={`relative rounded-2xl overflow-hidden select-none${hasImage ? ' flex flex-col justify-end' : ''}`}
           style={{
+            minHeight: hasImage ? 224 : undefined,
+            background: 'linear-gradient(120deg, #000E2C 0%, #00132E 100%)',
             border: '1px solid rgba(224,176,0,0.2)',
             boxShadow: '0 8px 36px rgba(0,0,0,0.55), 0 0 0 0.5px rgba(224,176,0,0.08)',
             cursor: 'default',
@@ -410,14 +413,19 @@ export function AdBanner() {
           onTouchStart={startPress}
           onTouchEnd={endPress}
         >
-          {/* Background image or gradient */}
-          {slide.image ? (
-            <img src={slide.image} alt="" className="absolute inset-0 w-full h-full object-cover"
-              style={{ opacity: 0.22, filter: 'saturate(0.7) blur(0.5px)' }} />
-          ) : null}
+          {/* Imagen protagonista (nítida, a toda la tarjeta) */}
+          {hasImage && (
+            <img
+              src={slide.image}
+              alt=""
+              className="absolute inset-0 w-full h-full object-cover"
+              style={{ filter: 'saturate(1.05)' }}
+            />
+          )}
+          {/* Scrim: transparente arriba (la imagen luce) → oscuro abajo (texto legible) */}
           <div className="absolute inset-0" style={{
-            background: slide.image
-              ? 'linear-gradient(120deg, rgba(0,14,44,0.97) 0%, rgba(0,8,28,0.92) 100%)'
+            background: hasImage
+              ? 'linear-gradient(180deg, rgba(0,8,28,0.28) 0%, rgba(0,8,28,0) 18%, rgba(0,8,28,0) 42%, rgba(0,8,28,0.52) 64%, rgba(0,8,28,0.87) 83%, rgba(0,10,32,0.97) 100%)'
               : 'linear-gradient(120deg, rgba(0,14,44,0.98) 0%, rgba(0,20,54,0.95) 55%, rgba(0,10,32,0.99) 100%)',
           }} />
           {/* Golden shimmer top */}
@@ -447,7 +455,11 @@ export function AdBanner() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -16 }}
               transition={{ duration: 0.38, ease: 'easeOut' }}
-              className="relative z-10 flex flex-col px-4 pt-5 pb-4 gap-3"
+              className={
+                hasImage
+                  ? 'relative z-10 flex flex-col px-4 pt-5 pb-4 gap-2.5'
+                  : 'relative z-10 flex flex-col px-4 pt-5 pb-4 gap-3'
+              }
             >
               {/* Top row: icon + badge */}
               <div className="flex items-center gap-2.5">
