@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, Users, Play, Pause, Smile, Pencil, Check, X, User } from 'lucide-react';
+import { Send, Users, Play, Pause, Smile, Pencil, Check, X, User, Lock, Trash2 } from 'lucide-react';
 import { useAudio } from '../context/AudioContext';
 import { apiFetch, BASE } from '../lib/api';
 
@@ -18,6 +18,11 @@ interface Message {
   time: string;
   avatar: string;
   color: string;
+  gender?: UserProfile['gender'];
+  isAdmin?: boolean;
+  edited?: boolean;
+  reactions?: Record<string, string[]>;
+  deviceId?: string;
 }
 
 /* ─── Constants ──────────────────────────────────────────── */
@@ -32,6 +37,24 @@ const AVATAR_COLORS = [
   'rgba(200,100,255,0.9)',
   'rgba(255,160,60,0.9)',
 ];
+
+/* Color por género (RGB sin alfa, para construir variantes) */
+const GENDER_RGB: Record<UserProfile['gender'], string> = {
+  hombre: '90,160,255',   // azul
+  mujer: '255,110,170',   // rosa
+  otro: '190,120,255',    // morado
+};
+const ADMIN_RGB = '224,176,0'; // dorado
+
+const ADMIN_FLAG_KEY = 'cr_chat_admin';
+const ADMIN_PIN = '1717';
+const REACTION_EMOJIS = ['❤️', '🔥', '😂', '😮'];
+
+/* Devuelve el RGB que corresponde a un mensaje (admin > género) */
+function rgbForMessage(m: { isAdmin?: boolean; gender?: UserProfile['gender'] }): string {
+  if (m.isAdmin) return ADMIN_RGB;
+  return (m.gender && GENDER_RGB[m.gender]) || GENDER_RGB.otro;
+}
 
 const GENDER_OPTIONS: { value: UserProfile['gender']; label: string; emoji: string }[] = [
   { value: 'hombre', label: 'Hombre', emoji: '👨' },
@@ -602,6 +625,172 @@ function EditProfileSheet({ profile, onSave, onClose }: EditProfileProps) {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   PIN MODAL (desbloqueo admin del chat)
+═══════════════════════════════════════════════════════════ */
+function ChatPinModal({ onSuccess, onClose }: { onSuccess: () => void; onClose: () => void }) {
+  const [pin, setPin] = useState('');
+  const [error, setError] = useState(false);
+  const [shake, setShake] = useState(false);
+
+  const handleDigit = (d: string) => {
+    if (pin.length >= 4) return;
+    const next = pin + d;
+    setPin(next);
+    setError(false);
+    if (next.length === 4) {
+      setTimeout(() => {
+        if (next === ADMIN_PIN) onSuccess();
+        else { setShake(true); setError(true); setTimeout(() => { setPin(''); setShake(false); }, 600); }
+      }, 120);
+    }
+  };
+
+  const DIGITS = [['1', '2', '3'], ['4', '5', '6'], ['7', '8', '9'], ['', '0', '⌫']];
+
+  return (
+    <motion.div
+      className="absolute inset-0 flex items-center justify-center z-[200] px-8"
+      style={{ background: 'rgba(0,5,18,0.94)', backdropFilter: 'blur(14px)' }}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      onClick={onClose}
+    >
+      <motion.div
+        className="w-full rounded-3xl px-6 py-7"
+        style={{ background: '#000D24', border: '1px solid rgba(224,176,0,0.22)', maxWidth: 300 }}
+        initial={{ scale: 0.88, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.88, y: 20 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex justify-center mb-4">
+          <div className="flex items-center justify-center rounded-full"
+            style={{ width: 52, height: 52, background: 'rgba(224,176,0,0.08)', border: '1.5px solid rgba(224,176,0,0.3)' }}>
+            <Lock size={22} color="#E0B000" />
+          </div>
+        </div>
+        <p style={{ color: 'white', fontFamily: 'Montserrat, sans-serif', fontWeight: 800, fontSize: 16, textAlign: 'center', marginBottom: 4 }}>
+          Acceso Admin
+        </p>
+        <p style={{ color: 'rgba(255,255,255,0.35)', fontFamily: 'Montserrat, sans-serif', fontSize: 11, textAlign: 'center', marginBottom: 24 }}>
+          Ingresa tu PIN para moderar el chat
+        </p>
+        <motion.div className="flex justify-center gap-3 mb-7"
+          animate={shake ? { x: [-8, 8, -8, 8, 0] } : { x: 0 }} transition={{ duration: 0.35 }}>
+          {[0, 1, 2, 3].map(i => (
+            <div key={i} style={{
+              width: 14, height: 14, borderRadius: '50%',
+              background: error ? 'rgba(255,80,80,0.8)' : i < pin.length ? '#E0B000' : 'rgba(255,255,255,0.1)',
+              border: `2px solid ${error ? 'rgba(255,80,80,0.5)' : i < pin.length ? '#E0B000' : 'rgba(255,255,255,0.15)'}`,
+              transition: 'all 0.15s',
+            }} />
+          ))}
+        </motion.div>
+        <div className="flex flex-col gap-2.5">
+          {DIGITS.map((row, ri) => (
+            <div key={ri} className="flex justify-center gap-4">
+              {row.map((digit, di) => (
+                <motion.button key={di}
+                  onClick={() => digit === '⌫' ? setPin(p => p.slice(0, -1)) : digit ? handleDigit(digit) : undefined}
+                  className="flex items-center justify-center rounded-2xl"
+                  style={{
+                    width: 64, height: 52,
+                    background: digit ? (digit === '⌫' ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.06)') : 'rgba(0,0,0,0)',
+                    border: digit ? '1px solid rgba(255,255,255,0.08)' : 'none',
+                    color: 'white', fontFamily: 'Montserrat, sans-serif',
+                    fontWeight: digit === '⌫' ? 400 : 700, fontSize: digit === '⌫' ? 18 : 20,
+                    cursor: digit ? 'pointer' : 'default',
+                  }}
+                  whileTap={digit ? { scale: 0.88 } : {}}
+                >{digit}</motion.button>
+              ))}
+            </div>
+          ))}
+        </div>
+        <motion.button onClick={onClose} className="w-full mt-5 py-2.5 rounded-xl" whileTap={{ scale: 0.97 }}>
+          <span style={{ color: 'rgba(255,255,255,0.3)', fontFamily: 'Montserrat, sans-serif', fontSize: 12 }}>Cancelar</span>
+        </motion.button>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   HOJA DE ACCIONES (long-press: reaccionar / editar / borrar)
+═══════════════════════════════════════════════════════════ */
+function MessageActionSheet({ msg, myDeviceId, isAdmin, onReact, onEdit, onDelete, onClose }: {
+  msg: Message; myDeviceId: string; isAdmin: boolean;
+  onReact: (emoji: string) => void; onEdit: () => void; onDelete: () => void; onClose: () => void;
+}) {
+  const canEdit = msg.isOwn;               // editas lo tuyo
+  const canDelete = isAdmin || msg.isOwn;  // admin borra todo; dueño borra lo suyo
+
+  return (
+    <motion.div
+      className="absolute inset-0 flex flex-col justify-end z-[200]"
+      style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      onClick={onClose}
+    >
+      <motion.div
+        className="rounded-t-3xl px-5 pt-4 pb-7"
+        style={{ background: '#000D24', border: '1px solid rgba(224,176,0,0.16)' }}
+        initial={{ y: 340 }} animate={{ y: 0 }} exit={{ y: 340 }}
+        transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mx-auto mb-4 rounded-full" style={{ width: 36, height: 4, background: 'rgba(255,255,255,0.12)' }} />
+
+        {/* Reacciones */}
+        <div className="flex justify-around mb-4">
+          {REACTION_EMOJIS.map((emoji) => {
+            const mine = (msg.reactions?.[emoji] ?? []).includes(myDeviceId);
+            return (
+              <motion.button key={emoji} onClick={() => onReact(emoji)}
+                className="flex items-center justify-center rounded-full"
+                style={{
+                  width: 52, height: 52, fontSize: 26,
+                  background: mine ? 'rgba(224,176,0,0.15)' : 'rgba(255,255,255,0.05)',
+                  border: `1px solid ${mine ? 'rgba(224,176,0,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                }}
+                whileTap={{ scale: 0.85 }} whileHover={{ scale: 1.1 }}>
+                {emoji}
+              </motion.button>
+            );
+          })}
+        </div>
+
+        {/* Preview del mensaje */}
+        <div className="rounded-xl px-3 py-2 mb-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+          <p className="truncate" style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, fontFamily: 'Montserrat, sans-serif' }}>
+            {msg.text}
+          </p>
+        </div>
+
+        {/* Acciones */}
+        {canEdit && (
+          <motion.button onClick={onEdit} className="w-full flex items-center gap-3 px-3 py-3 rounded-xl mb-2"
+            style={{ background: 'rgba(255,255,255,0.04)' }} whileTap={{ scale: 0.98 }}>
+            <Pencil size={16} color="#E0B000" />
+            <span style={{ color: 'white', fontSize: 13, fontFamily: 'Montserrat, sans-serif', fontWeight: 600 }}>Editar mensaje</span>
+          </motion.button>
+        )}
+        {canDelete && (
+          <motion.button onClick={onDelete} className="w-full flex items-center gap-3 px-3 py-3 rounded-xl mb-2"
+            style={{ background: 'rgba(255,80,80,0.08)', border: '1px solid rgba(255,80,80,0.2)' }} whileTap={{ scale: 0.98 }}>
+            <Trash2 size={16} color="rgba(255,100,100,0.9)" />
+            <span style={{ color: 'rgba(255,120,120,0.95)', fontSize: 13, fontFamily: 'Montserrat, sans-serif', fontWeight: 600 }}>
+              Eliminar mensaje
+            </span>
+          </motion.button>
+        )}
+        <motion.button onClick={onClose} className="w-full flex items-center justify-center px-3 py-3 rounded-xl"
+          style={{ background: 'rgba(255,255,255,0.04)' }} whileTap={{ scale: 0.98 }}>
+          <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, fontFamily: 'Montserrat, sans-serif' }}>Cerrar</span>
+        </motion.button>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
    MAIN LIVE CHAT
 ═══════════════════════════════════════════════════════════ */
 export function LiveChat() {
@@ -611,11 +800,20 @@ export function LiveChat() {
   const [onlineCount, setOnlineCount] = useState(0);
   const [showReactions, setShowReactions] = useState(false);
   const [showEditSheet, setShowEditSheet] = useState(false);
+  const [isAdmin, setIsAdmin] = useState<boolean>(() => {
+    try { return localStorage.getItem(ADMIN_FLAG_KEY) === '1'; } catch { return false; }
+  });
+  const [showAdminPin, setShowAdminPin] = useState(false);
+  const [actionMsg, setActionMsg] = useState<Message | null>(null);   // mensaje bajo long-press
+  const [editing, setEditing] = useState<Message | null>(null);       // mensaje en edición
   const bottomRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const { isPlaying, toggle } = useAudio();
   const deviceId = useRef(getDeviceId());
   const lastCountRef = useRef(0);
+  const lastSigRef = useRef('');
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const adminPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Presence: ping server to register as online ──────────
   const pingPresence = useCallback(async () => {
@@ -704,16 +902,30 @@ export function LiveChat() {
     time: new Date(raw.ts).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' }),
     avatar: raw.avatar ?? raw.user.charAt(0).toUpperCase(),
     color: raw.color ?? AVATAR_COLORS[0],
+    gender: raw.gender,
+    isAdmin: !!raw.isAdmin,
+    edited: !!raw.edited,
+    reactions: raw.reactions ?? {},
+    deviceId: raw.deviceId,
   }), []);
 
   // Fetch messages and update state (only scroll if new messages arrived)
   const fetchMessages = useCallback(async () => {
     try {
       const data: any[] = await apiFetch('/chat/messages');
-      setMessages(prev => {
-        if (data.length === prev.length && data.length > 0) return prev;
-        return data.map(toMessage);
-      });
+      // Firma de contenido: detecta nuevos mensajes, ediciones y reacciones
+      const sig = JSON.stringify(
+        data.map((d) => [
+          d.id,
+          d.text,
+          d.edited,
+          Object.entries(d.reactions ?? {}).map(([k, v]) => k + (Array.isArray(v) ? v.length : 0)),
+        ])
+      );
+      if (sig !== lastSigRef.current) {
+        lastSigRef.current = sig;
+        setMessages(data.map(toMessage));
+      }
       if (data.length > lastCountRef.current) {
         lastCountRef.current = data.length;
         setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
@@ -737,10 +949,37 @@ export function LiveChat() {
 
   const userAvatar = profile.name.charAt(0).toUpperCase();
   const userDisplayName = `${profile.name} ${genderEmoji(profile.gender)}`;
+  const myRgb = isAdmin ? ADMIN_RGB : GENDER_RGB[profile.gender];
+
+  // ── Guardar edición ──────────────────────────────────────
+  const saveEdit = async (msg: Message, text: string) => {
+    const t = text.trim();
+    if (!t) return;
+    setMessages(prev => prev.map(m => (m.id === msg.id ? { ...m, text: t, edited: true } : m)));
+    try {
+      await apiFetch(`/chat/messages/${msg.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ deviceId: deviceId.current, text: t }),
+      });
+      fetchMessages();
+    } catch (err) {
+      console.log('Error editing:', err);
+    }
+  };
 
   const sendMessage = async (text?: string) => {
     const msgText = (text ?? input).trim();
     if (!msgText) return;
+
+    // Si estamos editando (y no es un quick-reaction con texto fijo) → guardar edición
+    if (editing && !text) {
+      const target = editing;
+      setEditing(null);
+      setInput('');
+      await saveEdit(target, msgText);
+      return;
+    }
+
     if (!text) setInput('');
     setShowReactions(false);
 
@@ -753,7 +992,12 @@ export function LiveChat() {
       isOwn: true,
       time: new Date().toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' }),
       avatar: userAvatar,
-      color: AVATAR_COLORS[3],
+      color: `rgba(${myRgb},0.95)`,
+      gender: profile.gender,
+      isAdmin,
+      edited: false,
+      reactions: {},
+      deviceId: deviceId.current,
     };
     setMessages(prev => [...prev, optimistic]);
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
@@ -765,7 +1009,9 @@ export function LiveChat() {
           user: userDisplayName,
           text: msgText,
           avatar: userAvatar,
-          color: AVATAR_COLORS[3],
+          color: `rgba(${myRgb},0.95)`,
+          gender: profile.gender,
+          isAdmin,
           deviceId: deviceId.current,
         }),
       });
@@ -774,6 +1020,82 @@ export function LiveChat() {
     } catch (err) {
       console.log('Error sending message:', err);
     }
+  };
+
+  // ── Reaccionar (toggle) ──────────────────────────────────
+  const toggleReaction = async (msg: Message, emoji: string) => {
+    if (msg.id.startsWith('opt_')) return; // aún no existe en el server
+    setMessages(prev => prev.map(m => {
+      if (m.id !== msg.id) return m;
+      const reactions = { ...(m.reactions ?? {}) };
+      const list = Array.isArray(reactions[emoji]) ? [...reactions[emoji]] : [];
+      const i = list.indexOf(deviceId.current);
+      if (i >= 0) list.splice(i, 1); else list.push(deviceId.current);
+      if (list.length) reactions[emoji] = list; else delete reactions[emoji];
+      return { ...m, reactions };
+    }));
+    try {
+      await apiFetch(`/chat/messages/${msg.id}/react`, {
+        method: 'POST',
+        body: JSON.stringify({ deviceId: deviceId.current, emoji }),
+      });
+    } catch (err) {
+      console.log('Error reacting:', err);
+    }
+  };
+
+  // ── Borrar (admin o dueño) ───────────────────────────────
+  const deleteMessage = async (msg: Message) => {
+    setActionMsg(null);
+    setMessages(prev => prev.filter(m => m.id !== msg.id));
+    if (msg.id.startsWith('opt_')) return;
+    try {
+      await apiFetch(`/chat/messages/${msg.id}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ deviceId: deviceId.current, adminPin: isAdmin ? ADMIN_PIN : undefined }),
+      });
+    } catch (err) {
+      console.log('Error deleting:', err);
+    }
+  };
+
+  const startEditing = (msg: Message) => {
+    setActionMsg(null);
+    setEditing(msg);
+    setInput(msg.text);
+    setShowReactions(false);
+  };
+
+  // ── Long-press en un mensaje → hoja de acciones ──────────
+  const cancelMsgPress = () => {
+    if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; }
+  };
+  const startMsgPress = (msg: Message) => {
+    if (msg.id.startsWith('opt_')) return;
+    cancelMsgPress();
+    pressTimer.current = setTimeout(() => setActionMsg(msg), 480);
+  };
+
+  // ── Long-press en el encabezado → desbloqueo / salida admin ──
+  const cancelAdminPress = () => {
+    if (adminPressTimer.current) { clearTimeout(adminPressTimer.current); adminPressTimer.current = null; }
+  };
+  const startAdminPress = () => {
+    cancelAdminPress();
+    adminPressTimer.current = setTimeout(() => {
+      if (isAdmin) {
+        setIsAdmin(false);
+        try { localStorage.removeItem(ADMIN_FLAG_KEY); } catch { /**/ }
+      } else {
+        setShowAdminPin(true);
+      }
+    }, 900);
+  };
+
+  const enableAdmin = () => {
+    setIsAdmin(true);
+    try { localStorage.setItem(ADMIN_FLAG_KEY, '1'); } catch { /**/ }
+    setShowAdminPin(false);
   };
 
   const handleProfileSave = (updated: UserProfile) => {
@@ -795,14 +1117,21 @@ export function LiveChat() {
           borderBottom: '1px solid rgba(224,176,0,0.09)',
         }}
       >
-        <div className="flex items-center gap-2.5">
+        <div
+          className="flex items-center gap-2.5"
+          onPointerDown={startAdminPress}
+          onPointerUp={cancelAdminPress}
+          onPointerLeave={cancelAdminPress}
+          onTouchMove={cancelAdminPress}
+          style={{ cursor: 'default' }}
+        >
           <motion.div
             className="flex items-center justify-center rounded-full"
             style={{
               width: 30,
               height: 30,
-              background: 'rgba(224,176,0,0.1)',
-              border: '1px solid rgba(224,176,0,0.22)',
+              background: isAdmin ? 'rgba(224,176,0,0.16)' : 'rgba(224,176,0,0.1)',
+              border: `1px solid ${isAdmin ? 'rgba(224,176,0,0.4)' : 'rgba(224,176,0,0.22)'}`,
             }}
             animate={{
               boxShadow: [
@@ -816,26 +1145,34 @@ export function LiveChat() {
             <Users size={13} color="#E0B000" />
           </motion.div>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <motion.div
+                className="rounded-full"
+                style={{ width: 7, height: 7, background: '#3DDC84' }}
+                animate={{ opacity: [1, 0.25, 1], scale: [1, 1.25, 1] }}
+                transition={{ duration: 1.6, repeat: Infinity }}
+              />
               <span
                 style={{
-                  color: '#E0B000',
-                  fontSize: 13,
+                  color: '#3DDC84',
+                  fontSize: 12,
                   fontFamily: 'Montserrat, sans-serif',
                   fontWeight: 700,
                 }}
               >
-                {onlineCount}
+                En línea
               </span>
-              <span
-                style={{
-                  color: 'rgba(255,255,255,0.38)',
-                  fontSize: 11,
-                  fontFamily: 'Montserrat, sans-serif',
-                }}
-              >
-                en línea
-              </span>
+              {isAdmin && (
+                <span
+                  className="flex items-center gap-1 px-1.5 py-0.5 rounded-full"
+                  style={{ background: 'rgba(224,176,0,0.16)', border: '1px solid rgba(224,176,0,0.4)' }}
+                >
+                  <span style={{ fontSize: 9 }}>👑</span>
+                  <span style={{ color: '#E0B000', fontSize: 8, fontFamily: 'Montserrat, sans-serif', fontWeight: 800, letterSpacing: '0.5px' }}>
+                    ADMIN
+                  </span>
+                </span>
+              )}
             </div>
             <div
               style={{
@@ -917,109 +1254,152 @@ export function LiveChat() {
         style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
       >
         <AnimatePresence initial={false}>
-          {messages.map((msg) => (
-            <motion.div
-              key={msg.id}
-              initial={{ opacity: 0, y: 12, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ duration: 0.26, ease: 'easeOut' }}
-              className={`flex items-end gap-2 ${msg.isOwn ? 'flex-row-reverse' : 'flex-row'}`}
-            >
-              {/* Avatar */}
-              {!msg.isOwn && (
-                <div
-                  className="flex items-center justify-center rounded-full flex-shrink-0 mb-5"
-                  style={{
-                    width: 30,
-                    height: 30,
-                    background: msg.color.replace('0.9', '0.12'),
-                    border: `1.5px solid ${msg.color.replace('0.9', '0.45')}`,
-                    color: msg.color,
-                    fontSize: 11,
-                    fontFamily: 'Montserrat, sans-serif',
-                    fontWeight: 800,
-                  }}
-                >
-                  {msg.avatar}
-                </div>
-              )}
+          {messages.map((msg) => {
+            const rgb = rgbForMessage(msg);
+            const own = msg.isOwn;
+            const admin = !!msg.isAdmin;
+            const reactionEntries = Object.entries(msg.reactions ?? {}).filter(
+              ([, list]) => Array.isArray(list) && list.length > 0
+            );
+            return (
+              <motion.div
+                key={msg.id}
+                initial={{ opacity: 0, y: 12, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                transition={{ duration: 0.26, ease: 'easeOut' }}
+                className={`flex items-end gap-2 ${own ? 'flex-row-reverse' : 'flex-row'}`}
+              >
+                {/* Avatar (solo de los demás) */}
+                {!own && (
+                  <div
+                    className="flex items-center justify-center rounded-full flex-shrink-0 mb-5"
+                    style={{
+                      width: 30,
+                      height: 30,
+                      background: `rgba(${rgb},0.14)`,
+                      border: `1.5px solid rgba(${rgb},0.5)`,
+                      color: `rgba(${rgb},0.95)`,
+                      fontSize: 11,
+                      fontFamily: 'Montserrat, sans-serif',
+                      fontWeight: 800,
+                    }}
+                  >
+                    {admin ? '👑' : msg.avatar}
+                  </div>
+                )}
 
-              <div style={{ maxWidth: '76%' }}>
-                {!msg.isOwn && (
+                <div style={{ maxWidth: '76%' }}>
+                  {/* Nombre */}
                   <p
                     style={{
-                      color: msg.color,
+                      color: `rgba(${rgb},0.95)`,
                       fontSize: 10,
                       fontFamily: 'Montserrat, sans-serif',
                       fontWeight: 700,
                       marginBottom: 4,
-                      paddingLeft: 4,
+                      paddingLeft: own ? 0 : 4,
+                      paddingRight: own ? 4 : 0,
+                      textAlign: own ? 'right' : 'left',
                     }}
                   >
-                    {msg.user}
+                    {admin ? '👑 ' : ''}{own ? userDisplayName : msg.user}
                   </p>
-                )}
-                {msg.isOwn && (
+
+                  {/* Burbuja (long-press para reaccionar / editar / borrar) */}
+                  <motion.div
+                    className="px-4 py-2.5"
+                    onPointerDown={() => startMsgPress(msg)}
+                    onPointerUp={cancelMsgPress}
+                    onPointerLeave={cancelMsgPress}
+                    onTouchMove={cancelMsgPress}
+                    style={{
+                      background: admin
+                        ? 'linear-gradient(135deg, #E0B000 0%, #C49800 60%, #A07B00 100%)'
+                        : own
+                        ? `linear-gradient(135deg, rgba(${rgb},0.92) 0%, rgba(${rgb},0.6) 100%)`
+                        : 'rgba(255,255,255,0.058)',
+                      border: own || admin ? 'none' : '1px solid rgba(255,255,255,0.075)',
+                      borderRadius: 18,
+                      borderBottomRightRadius: own ? 4 : 18,
+                      borderBottomLeftRadius: own ? 18 : 4,
+                      boxShadow: admin
+                        ? '0 4px 20px rgba(224,176,0,0.32), 0 1px 4px rgba(0,0,0,0.3)'
+                        : own
+                        ? `0 4px 18px rgba(${rgb},0.28), 0 1px 4px rgba(0,0,0,0.25)`
+                        : '0 2px 8px rgba(0,0,0,0.2)',
+                      cursor: 'pointer',
+                    }}
+                    whileTap={{ scale: 0.97 }}
+                  >
+                    <p
+                      style={{
+                        color: admin ? '#000A1F' : own ? '#ffffff' : 'rgba(255,255,255,0.88)',
+                        fontSize: 13,
+                        fontFamily: 'Montserrat, sans-serif',
+                        fontWeight: own || admin ? 600 : 400,
+                        lineHeight: 1.45,
+                        wordBreak: 'break-word',
+                      }}
+                    >
+                      {msg.text}
+                    </p>
+                  </motion.div>
+
+                  {/* Reacciones */}
+                  {reactionEntries.length > 0 && (
+                    <div
+                      className="flex flex-wrap gap-1 mt-1.5"
+                      style={{ justifyContent: own ? 'flex-end' : 'flex-start' }}
+                    >
+                      {reactionEntries.map(([emoji, list]) => {
+                        const mine = list.includes(deviceId.current);
+                        return (
+                          <button
+                            key={emoji}
+                            onClick={() => toggleReaction(msg, emoji)}
+                            className="flex items-center gap-1 rounded-full"
+                            style={{
+                              padding: '2px 7px',
+                              background: mine ? 'rgba(224,176,0,0.18)' : 'rgba(255,255,255,0.06)',
+                              border: `1px solid ${mine ? 'rgba(224,176,0,0.45)' : 'rgba(255,255,255,0.1)'}`,
+                            }}
+                          >
+                            <span style={{ fontSize: 11 }}>{emoji}</span>
+                            <span
+                              style={{
+                                color: mine ? '#E0B000' : 'rgba(255,255,255,0.55)',
+                                fontSize: 10,
+                                fontFamily: 'Montserrat, sans-serif',
+                                fontWeight: 700,
+                              }}
+                            >
+                              {list.length}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Hora + editado */}
                   <p
                     style={{
-                      color: 'rgba(224,176,0,0.65)',
-                      fontSize: 10,
+                      color: 'rgba(255,255,255,0.18)',
+                      fontSize: 9,
                       fontFamily: 'Montserrat, sans-serif',
-                      fontWeight: 700,
-                      marginBottom: 4,
-                      paddingRight: 4,
-                      textAlign: 'right',
+                      textAlign: own ? 'right' : 'left',
+                      marginTop: 4,
+                      paddingLeft: own ? 0 : 4,
+                      paddingRight: own ? 4 : 0,
                     }}
                   >
-                    {userDisplayName}
+                    {msg.time}{msg.edited ? ' · editado' : ''}
                   </p>
-                )}
-                <motion.div
-                  className="px-4 py-2.5"
-                  style={{
-                    background: msg.isOwn
-                      ? 'linear-gradient(135deg, #E0B000 0%, #C49800 60%, #A07B00 100%)'
-                      : 'rgba(255,255,255,0.058)',
-                    border: msg.isOwn
-                      ? 'none'
-                      : '1px solid rgba(255,255,255,0.075)',
-                    borderRadius: 18,
-                    borderBottomRightRadius: msg.isOwn ? 4 : 18,
-                    borderBottomLeftRadius: msg.isOwn ? 18 : 4,
-                    boxShadow: msg.isOwn
-                      ? '0 4px 20px rgba(224,176,0,0.3), 0 1px 4px rgba(0,0,0,0.3)'
-                      : '0 2px 8px rgba(0,0,0,0.2)',
-                  }}
-                  whileTap={{ scale: 0.97 }}
-                >
-                  <p
-                    style={{
-                      color: msg.isOwn ? '#000A1F' : 'rgba(255,255,255,0.88)',
-                      fontSize: 13,
-                      fontFamily: 'Montserrat, sans-serif',
-                      fontWeight: msg.isOwn ? 600 : 400,
-                      lineHeight: 1.45,
-                    }}
-                  >
-                    {msg.text}
-                  </p>
-                </motion.div>
-                <p
-                  style={{
-                    color: 'rgba(255,255,255,0.18)',
-                    fontSize: 9,
-                    fontFamily: 'Montserrat, sans-serif',
-                    textAlign: msg.isOwn ? 'right' : 'left',
-                    marginTop: 4,
-                    paddingLeft: msg.isOwn ? 0 : 4,
-                    paddingRight: msg.isOwn ? 4 : 0,
-                  }}
-                >
-                  {msg.time}
-                </p>
-              </div>
-            </motion.div>
-          ))}
+                </div>
+              </motion.div>
+            );
+          })}
         </AnimatePresence>
         <div ref={bottomRef} />
       </div>
@@ -1056,13 +1436,43 @@ export function LiveChat() {
         )}
       </AnimatePresence>
 
+      {/* ── Banner de edición ── */}
+      <AnimatePresence>
+        {editing && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="flex items-center justify-between px-4 py-2 flex-shrink-0"
+            style={{ overflow: 'hidden', background: 'rgba(224,176,0,0.08)', borderTop: '1px solid rgba(224,176,0,0.18)' }}
+          >
+            <div className="flex items-center gap-2 overflow-hidden">
+              <Pencil size={12} color="#E0B000" />
+              <span style={{ color: '#E0B000', fontSize: 11, fontFamily: 'Montserrat, sans-serif', fontWeight: 700, flexShrink: 0 }}>
+                Editando
+              </span>
+              <span className="truncate" style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, fontFamily: 'Montserrat, sans-serif' }}>
+                — {editing.text}
+              </span>
+            </div>
+            <button
+              onClick={() => { setEditing(null); setInput(''); }}
+              className="flex items-center justify-center rounded-full flex-shrink-0"
+              style={{ width: 24, height: 24, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+            >
+              <X size={12} color="rgba(255,255,255,0.55)" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ── Input bar ── */}
       <div
         className="flex gap-2.5 items-center px-4 py-3 flex-shrink-0"
         style={{
           background: 'rgba(0,8,26,0.98)',
           backdropFilter: 'blur(28px)',
-          borderTop: '1px solid rgba(224,176,0,0.09)',
+          borderTop: editing ? 'none' : '1px solid rgba(224,176,0,0.09)',
           paddingBottom: 'max(env(safe-area-inset-bottom, 12px), 12px)',
         }}
       >
@@ -1096,7 +1506,7 @@ export function LiveChat() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-            placeholder="Escribe un mensaje..."
+            placeholder={editing ? 'Edita tu mensaje…' : 'Escribe un mensaje...'}
             className="w-full bg-transparent outline-none"
             style={{
               color: 'white',
@@ -1135,6 +1545,28 @@ export function LiveChat() {
             profile={profile}
             onSave={handleProfileSave}
             onClose={() => setShowEditSheet(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ── PIN admin ── */}
+      <AnimatePresence>
+        {showAdminPin && (
+          <ChatPinModal onSuccess={enableAdmin} onClose={() => setShowAdminPin(false)} />
+        )}
+      </AnimatePresence>
+
+      {/* ── Hoja de acciones (long-press en un mensaje) ── */}
+      <AnimatePresence>
+        {actionMsg && (
+          <MessageActionSheet
+            msg={actionMsg}
+            myDeviceId={deviceId.current}
+            isAdmin={isAdmin}
+            onReact={(emoji) => { toggleReaction(actionMsg, emoji); setActionMsg(null); }}
+            onEdit={() => startEditing(actionMsg)}
+            onDelete={() => deleteMessage(actionMsg)}
+            onClose={() => setActionMsg(null)}
           />
         )}
       </AnimatePresence>

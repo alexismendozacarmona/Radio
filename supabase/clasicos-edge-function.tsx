@@ -1,11 +1,52 @@
+// ════════════════════════════════════════════════════════════════════════
+//  Edge Function: make-server-a7fd6a14  (Clásicos del Reggaetón)
+//  ARCHIVO ÚNICO listo para pegar en el dashboard de Supabase.
+//  (fusiona index.tsx + kv_store.tsx en un solo archivo)
+//
+//  Requiere la tabla:
+//    create table if not exists public.kv_store_a7fd6a14 (
+//      key text not null primary key,
+//      value jsonb not null
+//    );
+// ════════════════════════════════════════════════════════════════════════
 import { Hono } from "npm:hono";
 import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
-import * as kv from "./kv_store.tsx";
+import { createClient } from "jsr:@supabase/supabase-js@2.49.8";
+
+// ── KV store (inline) ───────────────────────────────────────
+// Usa SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY (inyectadas automáticamente
+// por Supabase en toda Edge Function — no hay que configurarlas a mano).
+const sb = () => createClient(
+  Deno.env.get("SUPABASE_URL")!,
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+);
+const kv = {
+  set: async (key: string, value: any): Promise<void> => {
+    const { error } = await sb().from("kv_store_a7fd6a14").upsert({ key, value });
+    if (error) throw new Error(error.message);
+  },
+  get: async (key: string): Promise<any> => {
+    const { data, error } = await sb()
+      .from("kv_store_a7fd6a14").select("value").eq("key", key).maybeSingle();
+    if (error) throw new Error(error.message);
+    return data?.value;
+  },
+  del: async (key: string): Promise<void> => {
+    const { error } = await sb().from("kv_store_a7fd6a14").delete().eq("key", key);
+    if (error) throw new Error(error.message);
+  },
+  getByPrefix: async (prefix: string): Promise<any[]> => {
+    const { data, error } = await sb()
+      .from("kv_store_a7fd6a14").select("key, value").like("key", prefix + "%");
+    if (error) throw new Error(error.message);
+    return data?.map((d: any) => d.value) ?? [];
+  },
+};
 
 const app = new Hono();
 
-app.use('*', logger(console.log));
+app.use("*", logger(console.log));
 app.use("/*", cors({
   origin: "*",
   allowHeaders: ["Content-Type", "Authorization"],
@@ -14,11 +55,7 @@ app.use("/*", cors({
   maxAge: 600,
 }));
 
-/* ── Retry helper ──────────────────────────────────────────
-   Retries a kv operation up to `attempts` times when a
-   transient connection error occurs ("send was called before
-   connect", "connection reset", etc.)
-─────────────────────────────────────────────────────────── */
+/* ── Retry helper (errores transitorios de conexión) ──────── */
 async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
   let lastErr: unknown;
   for (let i = 0; i < attempts; i++) {
@@ -32,9 +69,9 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
         msg.includes("connection reset") ||
         msg.includes("broken pipe") ||
         msg.includes("Connection refused");
-      if (!isTransient) throw err;           // non-transient → bubble up immediately
+      if (!isTransient) throw err;
       if (i < attempts - 1) {
-        await new Promise(r => setTimeout(r, 120 * (i + 1))); // 120ms, 240ms back-off
+        await new Promise(r => setTimeout(r, 120 * (i + 1)));
       }
     }
   }
@@ -42,14 +79,12 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
 }
 
 // PIN de administrador del chat (mismo que Noticias/Banner).
-// Nota: verificación ligera — el PIN viaja en el cliente; mejora futura: token server-side.
 const CHAT_ADMIN_PIN = "1717";
 
 // ── Health ─────────────────────────────────────────────────
 app.get("/make-server-a7fd6a14/health", (c) => c.json({ status: "ok" }));
 
 // ── CHAT ───────────────────────────────────────────────────
-// GET last 100 messages
 app.get("/make-server-a7fd6a14/chat/messages", async (c) => {
   try {
     const raw = await withRetry(() => kv.getByPrefix("chat:"));
@@ -64,7 +99,6 @@ app.get("/make-server-a7fd6a14/chat/messages", async (c) => {
   }
 });
 
-// POST new message
 app.post("/make-server-a7fd6a14/chat/messages", async (c) => {
   try {
     const body = await c.req.json();
@@ -126,7 +160,7 @@ app.delete("/make-server-a7fd6a14/chat/messages/:id", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const { deviceId, adminPin } = body;
     const existing = await withRetry(() => kv.get(`chat:${id}`));
-    if (!existing) return c.json({ ok: true }); // ya no existe
+    if (!existing) return c.json({ ok: true });
     const isOwner = deviceId && existing.deviceId === deviceId;
     const isAdmin = adminPin && adminPin === CHAT_ADMIN_PIN;
     if (!isOwner && !isAdmin) return c.json({ error: "Not allowed" }, 403);
@@ -207,7 +241,6 @@ app.put("/make-server-a7fd6a14/ads", async (c) => {
 });
 
 // ── PRESENCE ───────────────────────────────────────────────
-// Register / renew presence (heartbeat)
 app.post("/make-server-a7fd6a14/presence/ping", async (c) => {
   try {
     const { deviceId } = await c.req.json();
@@ -220,7 +253,6 @@ app.post("/make-server-a7fd6a14/presence/ping", async (c) => {
   }
 });
 
-// Remove presence on exit
 app.delete("/make-server-a7fd6a14/presence/ping", async (c) => {
   try {
     const body = await c.req.json().catch(() => ({}));
@@ -234,11 +266,10 @@ app.delete("/make-server-a7fd6a14/presence/ping", async (c) => {
   }
 });
 
-// Count active presences (entries updated within last 90s)
 app.get("/make-server-a7fd6a14/presence/count", async (c) => {
   try {
     const entries = await withRetry(() => kv.getByPrefix("presence:"));
-    const cutoff = Date.now() - 90_000; // 90 seconds = 3 missed heartbeats
+    const cutoff = Date.now() - 90_000;
     const active = entries.filter((e: any) => e && e.ts > cutoff);
     return c.json({ count: active.length });
   } catch (err) {
