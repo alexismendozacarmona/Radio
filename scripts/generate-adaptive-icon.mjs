@@ -15,7 +15,10 @@ const OUT_FG = path.join(ROOT, "assets", "icon-foreground.png");
 const OUT_ONLY = path.join(ROOT, "assets", "icon-only.png");
 
 const CANVAS = 1024;
-const SAFE_ZONE_RATIO = 0.66;
+// El logo ocupa (casi) todo el lienzo del foreground. La "zona segura" la
+// aplica el propio XML adaptive-icon con su inset (~16.7%); NO hay que
+// pre-encoger aquí o el logo queda diminuto (doble encogido).
+const SAFE_ZONE_RATIO = 1.0;
 const FG_SIZE = Math.round(CANVAS * SAFE_ZONE_RATIO);
 const PAD = Math.round((CANVAS - FG_SIZE) / 2);
 
