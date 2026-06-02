@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Menu } from 'lucide-react';
 import { DrawerMenu } from './DrawerMenu';
 import { MiniPlayer } from './MiniPlayer';
+import { UpdateManager } from './UpdateManager';
 
 const LOGO_URL =
   'https://clasicosdelreggaeton.com/sitepad-data/uploads/2023/03/logopagina_Mesa-de-trabajo-1.png';
@@ -198,6 +199,9 @@ export function Layout() {
           isOpen={drawerOpen}
           onClose={() => setDrawerOpen(false)}
         />
+
+        {/* Aviso de actualización (si hay versión nueva en el server) */}
+        <UpdateManager />
       </div>
     </div>
   );

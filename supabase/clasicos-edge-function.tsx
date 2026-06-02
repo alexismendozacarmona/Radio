@@ -240,6 +240,30 @@ app.put("/make-server-a7fd6a14/ads", async (c) => {
   }
 });
 
+// ── APP VERSION (aviso de actualización) ───────────────────
+app.get("/make-server-a7fd6a14/version", async (c) => {
+  try {
+    const v = await withRetry(() => kv.get("app_version"));
+    return c.json(v ?? null);
+  } catch (err) {
+    console.log("Error fetching version:", err);
+    return c.json({ error: "Error fetching version" }, 500);
+  }
+});
+
+app.put("/make-server-a7fd6a14/version", async (c) => {
+  try {
+    const body = await c.req.json();
+    if (!body || body.adminPin !== CHAT_ADMIN_PIN) return c.json({ error: "Not allowed" }, 403);
+    const { latest, url, notes, mandatory } = body;
+    await withRetry(() => kv.set("app_version", { latest, url, notes: notes ?? "", mandatory: !!mandatory }));
+    return c.json({ ok: true });
+  } catch (err) {
+    console.log("Error saving version:", err);
+    return c.json({ error: "Error saving version" }, 500);
+  }
+});
+
 // ── PRESENCE ───────────────────────────────────────────────
 app.post("/make-server-a7fd6a14/presence/ping", async (c) => {
   try {

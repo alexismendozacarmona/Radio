@@ -11,6 +11,7 @@ import {
   Radio,
   ChevronRight,
 } from 'lucide-react';
+import { VersionAdmin } from './VersionAdmin';
 
 interface DrawerMenuProps {
   isOpen: boolean;
@@ -318,6 +319,10 @@ export function DrawerMenu({ isOpen, onClose }: DrawerMenuProps) {
                   Radio Online · En Vivo 24/7
                 </span>
               </p>
+              {/* Versión (mantener presionado = panel admin de actualización) */}
+              <div className="flex justify-center mt-1">
+                <VersionAdmin />
+              </div>
             </div>
           </motion.div>
         </>
