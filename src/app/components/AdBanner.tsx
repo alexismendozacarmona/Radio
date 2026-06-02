@@ -177,23 +177,15 @@ function PinModal({ onSuccess, onClose }: { onSuccess: () => void; onClose: () =
 }
 
 /* ─────────────────────────────────────────────────────────
-   ADMIN EDITOR
+   CAMPO DE EDICIÓN
+   A nivel de módulo (NO dentro de AdminEditor) para que React
+   no remonte el input en cada tecla y el teclado del móvil no
+   se cierre letra por letra.
 ───────────────────────────────────────────────────────── */
-function AdminEditor({ slides, onSave, onClose }: { slides: AdSlide[]; onSave: (s: AdSlide[]) => void; onClose: () => void }) {
-  const [draft, setDraft] = useState<AdSlide[]>(JSON.parse(JSON.stringify(slides)));
-  const [activeTab, setActiveTab] = useState(0);
-
-  const update = (idx: number, key: keyof AdSlide, val: string | boolean) => {
-    setDraft(prev => {
-      const copy = [...prev];
-      copy[idx] = { ...copy[idx], [key]: val };
-      return copy;
-    });
-  };
-
-  const Field = ({ label, value, onChange, multiline = false }: {
-    label: string; value: string; onChange: (v: string) => void; multiline?: boolean;
-  }) => (
+function BannerField({ label, value, onChange, multiline = false }: {
+  label: string; value: string; onChange: (v: string) => void; multiline?: boolean;
+}) {
+  return (
     <div className="mb-3">
       <p style={{ color: 'rgba(255,255,255,0.35)', fontFamily: 'Montserrat, sans-serif', fontSize: 9, fontWeight: 700, letterSpacing: '0.9px', marginBottom: 6 }}>{label}</p>
       {multiline ? (
@@ -207,6 +199,22 @@ function AdminEditor({ slides, onSave, onClose }: { slides: AdSlide[]; onSave: (
       )}
     </div>
   );
+}
+
+/* ─────────────────────────────────────────────────────────
+   ADMIN EDITOR
+───────────────────────────────────────────────────────── */
+function AdminEditor({ slides, onSave, onClose }: { slides: AdSlide[]; onSave: (s: AdSlide[]) => void; onClose: () => void }) {
+  const [draft, setDraft] = useState<AdSlide[]>(JSON.parse(JSON.stringify(slides)));
+  const [activeTab, setActiveTab] = useState(0);
+
+  const update = (idx: number, key: keyof AdSlide, val: string | boolean) => {
+    setDraft(prev => {
+      const copy = [...prev];
+      copy[idx] = { ...copy[idx], [key]: val };
+      return copy;
+    });
+  };
 
   return (
     <motion.div
@@ -297,12 +305,12 @@ function AdminEditor({ slides, onSave, onClose }: { slides: AdSlide[]; onSave: (
                 </motion.button>
               </div>
 
-              <Field label="BADGE (ej: 📢 PAUTA CON NOSOTROS)" value={draft[activeTab].badge} onChange={v => update(activeTab, 'badge', v)} />
-              <Field label="TÍTULO" value={draft[activeTab].title} onChange={v => update(activeTab, 'title', v)} multiline />
-              <Field label="SUBTÍTULO" value={draft[activeTab].subtitle} onChange={v => update(activeTab, 'subtitle', v)} multiline />
-              <Field label="TEXTO DEL BOTÓN (ej: Más info)" value={draft[activeTab].ctaText} onChange={v => update(activeTab, 'ctaText', v)} />
-              <Field label="ENLACE DEL BOTÓN (URL)" value={draft[activeTab].ctaUrl} onChange={v => update(activeTab, 'ctaUrl', v)} />
-              <Field label="IMAGEN DE FONDO (URL — dejar vacío para fondo degradado)" value={draft[activeTab].image} onChange={v => update(activeTab, 'image', v)} />
+              <BannerField label="BADGE (ej: 📢 PAUTA CON NOSOTROS)" value={draft[activeTab].badge} onChange={v => update(activeTab, 'badge', v)} />
+              <BannerField label="TÍTULO" value={draft[activeTab].title} onChange={v => update(activeTab, 'title', v)} multiline />
+              <BannerField label="SUBTÍTULO" value={draft[activeTab].subtitle} onChange={v => update(activeTab, 'subtitle', v)} multiline />
+              <BannerField label="TEXTO DEL BOTÓN (ej: Más info)" value={draft[activeTab].ctaText} onChange={v => update(activeTab, 'ctaText', v)} />
+              <BannerField label="ENLACE DEL BOTÓN (URL)" value={draft[activeTab].ctaUrl} onChange={v => update(activeTab, 'ctaUrl', v)} />
+              <BannerField label="IMAGEN DE FONDO (URL — dejar vacío para fondo degradado)" value={draft[activeTab].image} onChange={v => update(activeTab, 'image', v)} />
             </motion.div>
           </AnimatePresence>
         </div>
